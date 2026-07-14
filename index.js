@@ -4,6 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { connectDB } from "./db/connect.js";
 import authRoutes from './routes/authRoutes.js'
+import { protect } from './middleware/auth.js'
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -17,11 +18,12 @@ app.use(express.json())
 
 app.use('/api/auth', authRoutes)
 
-app.post("/api", (req, res) => {
+app.post("/api", protect, (req, res) => {
   const sampleBody = req.body
   res.json({
     message: "Hello from the Brewery Finder API",
     sentBody: sampleBody,
+    userId: req.user.id,
     status: "ok",
   });
 });
