@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 import { connectDB } from "./db/connect.js";
 import authRoutes from './routes/authRoutes.js'
 import { protect } from './middleware/auth.js'
+import cors from 'cors'
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,6 +14,11 @@ const app = express();
 const PORT = process.env.PORT || 9001;
 
 await connectDB();
+
+app.use(cors({
+  origin: 'http://localhost:5173',
+  credentials: true
+}))
 
 app.use(express.json())
 
