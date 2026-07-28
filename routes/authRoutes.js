@@ -18,8 +18,11 @@ router.post('/signup', async (req, res) => {
     }
 
     const user = await User.create({ name, email, password })
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' })
+
     res.status(201).json({
         message: 'User created successfully',
+        token,
         user: {
             id: user._id,
             name: user.name,
@@ -28,6 +31,32 @@ router.post('/signup', async (req, res) => {
     })
 })
 
+/**
+ * @openapi
+ * /api/auth/login:
+ *   post:
+ *     summary: Log in and receive a JWT
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: pat@test.com
+ *               password:
+ *                 type: string
+ *                 example: password123
+ *     responses:
+ *       200:
+ *         description: Login successful — returns token
+ *       401:
+ *         description: Invalid credentials
+ */
 router.post('/login', async (req, res) => {
     const { email, password } = req.body
 
