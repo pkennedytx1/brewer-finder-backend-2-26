@@ -7,5 +7,19 @@ services:
     volumes:
       - mongodb_data:/data/db
 
+  api:
+    build: .
+    container_name: brewery-finder-api
+    ports:
+      - "9001:9001"
+    environment:
+      PORT: 9001
+      MONGODB_URI: mongodb://mongodb:27017/brewery-finder
+      JWT_SECRET: secretmaybe
+    depends_on:
+      - mongodb
+    volumes:
+      - /app/node_modules
+
 volumes:
   mongodb_data:
