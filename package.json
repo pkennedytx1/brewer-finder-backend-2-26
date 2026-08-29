@@ -10,6 +10,8 @@
     "db": "docker compose up -d",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:unit": "vitest run tests/auth.middleware.test.js",
+    "test:integration": "vitest run tests/auth.routes.test.js tests/breweries.routes.test.js tests/favorites.routes.test.js",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {

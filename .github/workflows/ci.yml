@@ -1,0 +1,64 @@
+name: Backend CI
+
+on:
+  push:
+    tags:
+      - "*.*.*"
+    branches:
+      - "**"
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      MONGODB_URI: mongodb://localhost:27017/brewery-finder-test
+      JWT_SECRET: ci-test-secret
+    services:
+      mongo:
+        image: mongo:6
+        ports:
+          - 27017:27017
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run test:unit
+
+      - run: npm run test:integration
+
+  deploy:
+    needs: test
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr-login
+
+      - uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.ecr-login.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:${{ github.ref_name }}
+            ${{ steps.ecr-login.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:latest
+
+      - run: |
+          aws ecs update-service \
+            --cluster "${{ secrets.ECS_CLUSTER }}" \
+            --service "${{ secrets.ECS_SERVICE }}" \
+            --force-new-deployment

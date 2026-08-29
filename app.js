@@ -14,9 +14,14 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
+const allowedOrigins = [
+  "http://localhost:5173",
+  ...(process.env.FRONTEND_ORIGIN ? [process.env.FRONTEND_ORIGIN] : []),
+];
+
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin: allowedOrigins,
     credentials: true,
   })
 );
