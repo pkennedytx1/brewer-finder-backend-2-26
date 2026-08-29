@@ -254,7 +254,102 @@ git tag 1.0.1
 git push origin 1.0.1
 ```
 
-See `MODULE_24_WALKTHROUGH.md` in the parent `module_11` folder for the full instructor checklist and the frontend README for S3 setup.
+### Architecture — how the pieces fit together
+
+Two repos, two pipelines, one app. At **runtime** the browser loads static files from S3, then calls the API through a load balancer. At **deploy time** GitHub Actions pushes artifacts to AWS.
+
+#### Runtime (user visits the app)
+
+```mermaid
+flowchart LR
+  User["Browser"]
+
+  subgraph Frontend["Frontend — S3"]
+    S3["S3 bucket\nstatic website hosting\nindex.html + JS/CSS"]
+  end
+
+  subgraph Backend["Backend — AWS us-east-1"]
+    ALB["Application Load Balancer\nHTTP :80"]
+    ECS["ECS Fargate task\nNode API :9001"]
+    ECR["ECR\nDocker image store"]
+  end
+
+  subgraph Data["Database — MongoDB Atlas"]
+    Atlas["Atlas cluster\nbrewery-finder DB"]
+  end
+
+  User -->|"1. GET website"| S3
+  S3 -->|"2. returns built React app"| User
+  User -->|"3. fetch /api/breweries\n(VITE_API_BASE_URL baked in at build)"| ALB
+  ALB -->|"4. forward to healthy target"| ECS
+  ECS -->|"5. read/write users, favorites"| Atlas
+  ECR -.->|"image pulled on deploy"| ECS
+```
+
+| Service | Role in this app |
+|---------|------------------|
+| **S3** | Hosts the built React app (`dist/`) as a public static website |
+| **ALB** | Public entry point for the API; maps HTTP 80 → container 9001 |
+| **ECS Fargate** | Runs the API container; redeployed when CI pushes a new image |
+| **ECR** | Private Docker registry; CI pushes `:latest` (and tag version) here |
+| **MongoDB Atlas** | Managed database; API connects via `MONGODB_URI` over the internet |
+| **GitHub Actions** | Not runtime — builds, tests, and deploys on tag push |
+
+#### Deploy (push tag `1.0.0`)
+
+```mermaid
+flowchart TB
+  Dev["Developer\ngit push tag"]
+
+  subgraph GH["GitHub Actions"]
+    BT["Backend workflow\ntest → docker build"]
+    FT["Frontend workflow\nlint/test → vite build"]
+  end
+
+  subgraph AWS["AWS"]
+    ECR["ECR"]
+    ECS["ECS service\nforce new deployment"]
+    S3["S3 bucket\naws s3 sync dist/"]
+  end
+
+  Atlas["MongoDB Atlas\n(already running)"]
+
+  Dev --> BT
+  Dev --> FT
+  BT --> ECR --> ECS
+  ECS --> Atlas
+  FT --> S3
+```
+
+| Step | Backend repo | Frontend repo |
+|------|--------------|---------------|
+| Trigger | Push tag `*.*.*` | Push tag `*.*.*` |
+| CI | Unit + integration tests | Lint + coverage |
+| CD | Build image → ECR → ECS redeploy | Build with `VITE_API_BASE_URL` → S3 sync |
+| Needs first | ECS cluster/service/ALB exist | `VITE_API_BASE_URL` secret + S3 bucket exist |
+
+#### Security considerations (Module 24 demo stack)
+
+This stack is for **learning**, not production. Know the tradeoffs:
+
+| Area | What we did | Risk | Production would… |
+|------|-------------|------|-------------------|
+| **Transport** | HTTP only (ALB + S3 website) | Traffic readable on the network | HTTPS via ACM cert on ALB; CloudFront + ACM for S3 |
+| **S3 bucket** | Public read on objects | Anyone can download static files (expected for a website) | CloudFront with OAI/OAC; optional private bucket |
+| **ALB security group** | Must open inbound **80** manually | Easy to misconfigure (timeouts if blocked) | Same, but often locked to CloudFront or corporate IP ranges |
+| **ECS security group** | Port **9001** only from ALB SG | Better — API not exposed directly to internet | Keep this pattern; never open 9001 to `0.0.0.0/0` |
+| **Atlas network** | `0.0.0.0/0` allowed | Any IP can attempt connection (still needs credentials) | IP allowlist or VPC peering / PrivateLink |
+| **Secrets in ECS env** | `MONGODB_URI`, `JWT_SECRET` in task definition | Visible to anyone with ECS read access in console | AWS Secrets Manager or SSM Parameter Store |
+| **GitHub Secrets** | Long-lived IAM access keys | Key leak = AWS access until rotated | OIDC federation (no static keys); scoped IAM |
+| **IAM deploy user** | ECR push, ECS update, S3 sync | Over-privileged policy = broader blast radius | Least-privilege per repo; separate users per pipeline |
+| **CORS** | `FRONTEND_ORIGIN` allowlist | Misconfiguration blocks or over-allows browsers | Exact origin match; no `*` with credentials |
+| **JWT** | Symmetric secret in env | Compromised secret = forged tokens | Strong random secret; rotation; short expiry |
+| **Build-time API URL** | `VITE_API_BASE_URL` in frontend bundle | Public in JS (expected — API URLs are not secret) | Same; protect the API with auth + HTTPS |
+| **Root AWS account** | Used for one-time ECS setup | Root has unlimited access | Day-to-day: IAM users/roles only |
+
+**Lesson from this module:** AWS security is **opt-in**. Security groups, IAM, and bucket policies default to restrictive or empty — you explicitly open what you need (e.g. ALB port 80). A hanging request often means a security group was never opened.
+
+See `MODULE_24_WALKTHROUGH.md` in the parent `module_11` folder for the full instructor checklist.
 
 ### Tear down after the module
 
